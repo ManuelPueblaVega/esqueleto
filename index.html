@@ -3,34 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cuerpo Musical con IA</title>
+    <title>Controlador MIDI Corporal con IA</title>
     <!-- Carga de Tailwind CSS para el diseño -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Carga de p5.js y su librería de sonido -->
+    <!-- Carga de p5.js (ya no se necesita p5.sound.js) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
     <!-- Carga de ml5.js -->
     <script src="https://unpkg.com/ml5@0.7.1/dist/ml5.min.js"></script>
     <style>
-        /* Estilos para asegurar que la app se vea bien */
-        body {
-            font-family: 'Inter', sans-serif;
-        }
+        body { font-family: 'Inter', sans-serif; }
         canvas {
             display: block;
             margin: 0 auto;
             border-radius: 0.75rem;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
         }
+        /* Animación para el indicador de conexión */
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(74, 222, 128, 0); }
+        }
+        .pulse-g { animation: pulse-green 2s infinite; }
     </style>
 </head>
 <body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
 
     <div class="w-full max-w-4xl text-center mb-6">
-        <h1 class="text-4xl md:text-5xl font-bold text-cyan-400">Cuerpo Musical con IA</h1>
-        <p id="status" class="mt-2 text-lg text-gray-300">Cargando modelos de IA... Por favor, espera.</p>
-        <p id="instructions" class="mt-2 text-md text-gray-400 hidden">¡Modelo cargado! Mueve tus muñecas para crear música.</p>
-        <p id="audio-prompt" class="mt-4 text-yellow-400 font-semibold text-lg animate-pulse">Haz clic en la pantalla para activar el sonido.</p>
+        <h1 class="text-4xl md:text-5xl font-bold text-cyan-400">Controlador MIDI Corporal</h1>
+        <div id="status-container" class="mt-2 text-lg text-gray-300 flex items-center justify-center gap-2">
+            <span id="status-indicator" class="w-3 h-3 bg-red-500 rounded-full"></span>
+            <span id="status">Esperando conexión con el servidor puente...</span>
+        </div>
+        <p id="instructions" class="mt-2 text-md text-gray-400 hidden">¡Conectado! Mueve tus muñecas para enviar MIDI a Ableton.</p>
     </div>
 
     <!-- El contenedor para el canvas de p5.js -->
@@ -39,13 +43,13 @@
     <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-center text-gray-500 text-sm">
         <div>
             <p class="font-bold text-cyan-400">Mano Derecha</p>
-            <p>Vertical ↕ = Tono</p>
-            <p>Horizontal ↔ = Volumen</p>
+            <p>Vertical ↕ = MIDI CC 21</p>
+            <p>Horizontal ↔ = MIDI CC 20</p>
         </div>
         <div>
             <p class="font-bold text-pink-400">Mano Izquierda</p>
-            <p>Vertical ↕ = Frecuencia del Filtro</p>
-            <p>Horizontal ↔ = Resonancia del Filtro</p>
+            <p>Vertical ↕ = MIDI CC 23</p>
+            <p>Horizontal ↔ = MIDI CC 22</p>
         </div>
     </div>
 
@@ -54,31 +58,13 @@
         let video;
         let poseNet;
         let poses = [];
-        let osc, envelope, filter; // Oscilador, envolvente y filtro para el sonido
-        
-        let isAudioEnabled = false; // Controla si el audio ha sido activado por el usuario
+        let ws; // Variable para la conexión WebSocket
 
         // --- Función de configuración de p5.js ---
-        // Se ejecuta una sola vez al cargar la página
         function setup() {
             const canvasContainer = document.getElementById('canvas-container');
             const canvas = createCanvas(canvasContainer.offsetWidth, canvasContainer.offsetHeight);
             canvas.parent('canvas-container');
-
-            // --- Configuración del Sonido ---
-            envelope = new p5.Envelope();
-            envelope.setADSR(0.01, 0.1, 0.5, 0.4);
-            envelope.setRange(1, 0);
-
-            osc = new p5.Oscillator('sawtooth'); // Cambiado a 'sawtooth' para que el filtro sea más notorio
-            osc.amp(envelope);
-            
-            filter = new p5.LowPass(); // Creamos el filtro de paso bajo
-            osc.disconnect(); // Desconectamos el oscilador de la salida principal
-            osc.connect(filter); // Conectamos el oscilador al filtro
-            
-            osc.start();
-            osc.freq(440);
 
             // --- Configuración de la Cámara ---
             video = createCapture(VIDEO);
@@ -90,24 +76,44 @@
             poseNet.on('pose', (results) => {
                 poses = results;
             });
+            
+            // --- Conexión WebSocket al servidor puente ---
+            setupWebSocket();
+        }
+        
+        function setupWebSocket() {
+            // Se conecta al servidor que crearemos con Node.js en la misma máquina
+            ws = new WebSocket('ws://localhost:8080');
+            const statusIndicator = document.getElementById('status-indicator');
+            const statusText = document.getElementById('status');
+            const instructions = document.getElementById('instructions');
+
+            ws.onopen = () => {
+                console.log('Conectado al servidor WebSocket!');
+                statusIndicator.classList.remove('bg-red-500');
+                statusIndicator.classList.add('bg-green-400', 'pulse-g');
+                statusText.innerText = 'Conectado al servidor puente';
+                instructions.classList.remove('hidden');
+            };
+
+            ws.onclose = () => {
+                console.log('Desconectado del servidor WebSocket. Intentando reconectar...');
+                statusIndicator.classList.remove('bg-green-400', 'pulse-g');
+                statusIndicator.classList.add('bg-red-500');
+                statusText.innerText = 'Desconectado. Revisa que el servidor puente esté activo.';
+                instructions.classList.add('hidden');
+                // Intenta reconectar después de 3 segundos
+                setTimeout(setupWebSocket, 3000);
+            };
+            
+            ws.onerror = (err) => {
+                console.error('Error de WebSocket:', err);
+                statusText.innerText = 'Error de conexión. ¿Está el servidor puente en marcha?';
+            }
         }
 
-        // --- Callback para cuando el modelo está listo ---
         function modelReady() {
             console.log('¡Modelo PoseNet cargado!');
-            document.getElementById('status').innerText = '¡Modelo listo!';
-            document.getElementById('instructions').classList.remove('hidden');
-        }
-
-        // --- Activar el audio con un clic ---
-        function mousePressed() {
-            if (!isAudioEnabled && (mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height)) {
-                getAudioContext().resume().then(() => {
-                    console.log('Contexto de audio reanudado.');
-                    isAudioEnabled = true;
-                    document.getElementById('audio-prompt').classList.add('hidden');
-                });
-            }
         }
 
         // --- Función de dibujo de p5.js (bucle principal) ---
@@ -123,46 +129,49 @@
             drawKeypoints();
             drawSkeleton();
 
-            // --- Lógica para controlar el sonido ---
-            if (poses.length > 0 && isAudioEnabled) {
+            // --- Lógica para enviar datos MIDI ---
+            if (poses.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
                 const pose = poses[0].pose;
                 const rightWrist = pose.keypoints.find(k => k.part === 'rightWrist');
-                const leftWrist = pose.keypoints.find(k => k.part === 'leftWrist'); // Buscamos la muñeca izquierda
+                const leftWrist = pose.keypoints.find(k => k.part === 'leftWrist');
+                
+                const midiData = {};
 
-                // --- Control de la mano derecha (Tono y Volumen) ---
+                // --- Datos de la mano derecha ---
                 if (rightWrist && rightWrist.score > 0.2) {
-                    let freq = map(rightWrist.position.y, 0, height, 600, 100);
-                    let amp = map(rightWrist.position.x, 0, width, 0.05, 0.5);
-                    osc.freq(freq, 0.1);
-                    envelope.setRange(amp, 0);
-                    envelope.play(osc, 0, 0.1);
+                    midiData.right = {
+                        // Normalizamos los valores entre 0.0 y 1.0
+                        x: rightWrist.position.x / width,
+                        y: rightWrist.position.y / height
+                    };
+                }
+                
+                // --- Datos de la mano izquierda ---
+                if (leftWrist && leftWrist.score > 0.2) {
+                    midiData.left = {
+                         // Normalizamos los valores entre 0.0 y 1.0
+                        x: leftWrist.position.x / width,
+                        y: leftWrist.position.y / height
+                    };
                 }
 
-                // --- Control de la mano izquierda (Filtro) ---
-                if (leftWrist && leftWrist.score > 0.2) {
-                    // Mapeamos Y a la frecuencia de corte del filtro (más arriba = más brillante)
-                    let filterFreq = map(leftWrist.position.y, 0, height, 5000, 100);
-                    // Mapeamos X a la resonancia del filtro (más a la derecha = más resonante)
-                    let filterRes = map(leftWrist.position.x, 0, width, 15, 5);
-                    filter.freq(filterFreq, 0.1);
-                    filter.res(filterRes, 0.1);
+                // Si hemos detectado alguna muñeca, enviamos los datos
+                if (Object.keys(midiData).length > 0) {
+                    ws.send(JSON.stringify(midiData));
                 }
             }
         }
         
-        // --- Dibuja los puntos clave (articulaciones) ---
+        // --- Las funciones de dibujo no cambian ---
         function drawKeypoints() {
             for (let i = 0; i < poses.length; i++) {
                 const pose = poses[i].pose;
                 for (let j = 0; j < pose.keypoints.length; j++) {
                     const keypoint = pose.keypoints[j];
                     if (keypoint.score > 0.2) {
-                        // Coloreamos la muñeca izquierda de rosa para distinguirla
-                        if (keypoint.part === 'leftWrist') {
-                            fill(236, 72, 153); // Color rosa
-                        } else {
-                            fill(45, 212, 191); // Color cian
-                        }
+                        if (keypoint.part === 'leftWrist') { fill(236, 72, 153); }
+                        else if (keypoint.part === 'rightWrist') { fill(45, 212, 191); }
+                        else { fill(255, 255, 255, 150); }
                         noStroke();
                         const mirroredX = width - keypoint.position.x;
                         ellipse(mirroredX, keypoint.position.y, 12, 12);
@@ -171,29 +180,26 @@
             }
         }
 
-        // --- Dibuja el esqueleto ---
         function drawSkeleton() {
             for (let i = 0; i < poses.length; i++) {
                 const skeleton = poses[i].skeleton;
                 for (let j = 0; j < skeleton.length; j++) {
                     const partA = skeleton[j][0];
                     const partB = skeleton[j][1];
-                    stroke(255, 255, 255, 150);
-                    strokeWeight(3);
+                    stroke(255, 255, 255, 100);
+                    strokeWeight(2);
                     const mirroredAx = width - partA.position.x;
-                    const mirroredBx = width - partB.position.x;
+                    const mirroredBx = width - partB.position.y;
                     line(mirroredAx, partA.position.y, mirroredBx, partB.position.y);
                 }
             }
         }
 
-        // Ajusta el canvas si la ventana cambia de tamaño
         function windowResized() {
             const canvasContainer = document.getElementById('canvas-container');
             resizeCanvas(canvasContainer.offsetWidth, canvasContainer.offsetHeight);
             video.size(width, height);
         }
-
     </script>
 </body>
 </html>

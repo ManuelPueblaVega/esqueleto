@@ -3,203 +3,320 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controlador MIDI Corporal con IA</title>
-    <!-- Carga de Tailwind CSS para el diseño -->
+    <title>Reconocimiento Corporal para Sonido</title>
+    <!-- Carga de Tailwind CSS para un diseño moderno y responsivo -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Carga de p5.js (ya no se necesita p5.sound.js) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
-    <!-- Carga de ml5.js -->
-    <script src="https://unpkg.com/ml5@0.7.1/dist/ml5.min.js"></script>
+    <!-- Carga de ml5.js para el reconocimiento de poses (PoseNet) -->
+    <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
+    <!-- Carga de Tone.js para la generación de sonido en el navegador -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <!-- Fuente Inter para una mejor legibilidad -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        canvas {
+        /* Estilos generales para el cuerpo de la página */
+        body {
+            font-family: 'Inter', sans-serif; /* Aplica la fuente Inter */
+            background-color: #f0f4f8; /* Color de fondo suave */
+            color: #2d3748; /* Color de texto principal */
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Centra los elementos horizontalmente */
+            justify-content: center; /* Centra los elementos verticalmente */
+            min-height: 100vh; /* Altura mínima del 100% del viewport */
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box; /* Incluye padding en el ancho total */
+        }
+        /* Estilo del contenedor principal de la aplicación */
+        .container {
+            background-color: #ffffff; /* Fondo blanco */
+            border-radius: 1rem; /* Bordes redondeados */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Sombra suave */
+            padding: 2.5rem; /* Relleno interno */
+            max-width: 900px; /* Ancho máximo */
+            width: 100%; /* Ocupa todo el ancho disponible */
+            text-align: center; /* Centra el texto */
+        }
+        /* Estilos para los elementos de video y canvas */
+        video, canvas {
             display: block;
-            margin: 0 auto;
-            border-radius: 0.75rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            margin: 0 auto; /* Centra el elemento */
+            border-radius: 0.75rem; /* Bordes redondeados */
+            background-color: #000; /* Fondo negro para el área de video/canvas */
         }
-        /* Animación para el indicador de conexión */
-        @keyframes pulse-green {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7); }
-            50% { box-shadow: 0 0 0 10px rgba(74, 222, 128, 0); }
+        video {
+            transform: scaleX(-1); /* Efecto espejo para la webcam, más intuitivo */
+            position: absolute; /* Posiciona el video absolutamente dentro de su contenedor */
+            z-index: 1; /* Asegura que el video esté debajo del canvas */
         }
-        .pulse-g { animation: pulse-green 2s infinite; }
+        canvas {
+            position: relative; /* Posiciona el canvas relativamente para estar sobre el video */
+            z-index: 2; /* Asegura que el canvas esté encima del video */
+            pointer-events: none; /* Permite que los clics pasen a través del canvas */
+        }
+        /* Contenedor para el video y el canvas, mantiene la relación de aspecto */
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 75%; /* 4:3 aspect ratio (height is 75% of width for 4:3) */
+            height: 0; /* Necesario para que padding-bottom defina la altura */
+            margin-bottom: 1.5rem; /* Margen inferior */
+            border-radius: 0.75rem; /* Bordes redondeados */
+            overflow: hidden; /* Oculta cualquier contenido que se desborde */
+        }
+        .video-container video, .video-container canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        /* Estilo para el botón de inicio */
+        button {
+            background-color: #4c51bf; /* Color de fondo azul-púrpura */
+            color: white; /* Color de texto blanco */
+            padding: 0.75rem 2rem; /* Relleno interno */
+            border-radius: 0.75rem; /* Bordes redondeados */
+            font-weight: 600; /* Texto en negrita */
+            cursor: pointer; /* Cambia el cursor a una mano al pasar por encima */
+            transition: background-color 0.3s ease; /* Transición suave al pasar el ratón */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* Sombra */
+        }
+        button:hover {
+            background-color: #5a62e3; /* Color de fondo más claro al pasar el ratón */
+        }
+        /* Estilo para el mensaje de estado */
+        #status-message {
+            margin-top: 1.5rem;
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #4a5568; /* Color de texto oscuro */
+        }
+        /* Estilo para las etiquetas de las notas musicales */
+        .note-display {
+            margin-top: 1rem;
+            font-size: 1.25rem;
+            color: #2b6cb0; /* Color azul */
+            font-weight: 700; /* Muy en negrita */
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">Reconocimiento Corporal para Sonido</h1>
+        <p class="text-gray-600 mb-8">
+            ¡Hola, Manuel! Esta aplicación detecta tus muñecas para transformar tus movimientos en sonido.
+            La muñeca izquierda controlará notas en una octava y la derecha en la octava superior.
+        </p>
 
-    <div class="w-full max-w-4xl text-center mb-6">
-        <h1 class="text-4xl md:text-5xl font-bold text-cyan-400">Controlador MIDI Corporal</h1>
-        <div id="status-container" class="mt-2 text-lg text-gray-300 flex items-center justify-center gap-2">
-            <span id="status-indicator" class="w-3 h-3 bg-red-500 rounded-full"></span>
-            <span id="status">Esperando conexión con el servidor puente...</span>
-        </div>
-        <p id="instructions" class="mt-2 text-md text-gray-400 hidden">¡Conectado! Mueve tus muñecas para enviar MIDI a Ableton.</p>
-    </div>
+        <button id="startButton" class="mb-6">Iniciar Cámara y Sonido</button>
 
-    <!-- El contenedor para el canvas de p5.js -->
-    <div id="canvas-container" class="w-full max-w-2xl aspect-video bg-gray-800 rounded-xl shadow-lg"></div>
+        <div class="video-container">
+            <video id="video" playsinline autoplay></video>
+            <canvas id="canvas"></canvas>
+        </div>
 
-    <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-center text-gray-500 text-sm">
-        <div>
-            <p class="font-bold text-cyan-400">Mano Derecha</p>
-            <p>Vertical ↕ = MIDI CC 21</p>
-            <p>Horizontal ↔ = MIDI CC 20</p>
-        </div>
-        <div>
-            <p class="font-bold text-pink-400">Mano Izquierda</p>
-            <p>Vertical ↕ = MIDI CC 23</p>
-            <p>Horizontal ↔ = MIDI CC 22</p>
-        </div>
+        <div id="status-message" class="mt-4">Cargando modelo...</div>
+        <div id="leftWristNote" class="note-display">Muñeca Izquierda: --</div>
+        <div id="rightWristNote" class="note-display">Muñeca Derecha: --</div>
     </div>
 
     <script>
-        // Declaración de variables globales
-        let video;
-        let poseNet;
-        let poses = [];
-        let ws; // Variable para la conexión WebSocket
+        // Variables globales necesarias para el entorno de Canvas (aunque no se usen directamente en esta app)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // --- Función de configuración de p5.js ---
+        // Variables principales de la aplicación
+        let video; // Elemento de video para la cámara
+        let poseNet; // Instancia de PoseNet de ml5.js
+        let poses = []; // Array para almacenar las poses detectadas
+        let synth; // Sintetizador de Tone.js
+        let leftWristNote = 'C4'; // Nota actual de la muñeca izquierda (valor inicial)
+        let rightWristNote = 'C5'; // Nota actual de la muñeca derecha (valor inicial, una octava arriba)
+
+        // Referencias a elementos del DOM
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusMessage = document.getElementById('status-message');
+        const startButton = document.getElementById('startButton');
+        const leftWristNoteDisplay = document.getElementById('leftWristNote');
+        const rightWristNoteDisplay = document.getElementById('rightWristNote');
+
+        // Notas de la escala de Do mayor para el mapeo
+        const scaleNotes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+        const notesPerOctave = scaleNotes.length; // 7 notas por octava en una escala diatónica
+
+        /**
+         * Mapea la posición vertical (Y) de una muñeca a una nota musical dentro de un rango de octavas.
+         * @param {number} yPos La posición Y de la muñeca en el canvas.
+         * @param {number} minNoteIndex El índice inicial para el mapeo de notas (ej. 0 para C4).
+         * @param {number} maxNoteIndex El índice final para el mapeo de notas (ej. 6 para B4).
+         * @param {number} videoHeight La altura del video/canvas para normalizar la posición Y.
+         * @returns {string} La nota musical en formato "NotaOctava" (ej. "C4", "G5").
+         */
+        function mapYToNote(yPos, minNoteIndex, maxNoteIndex, videoHeight) {
+            // Normaliza la posición Y de 0 a 1 e invierte para que arriba sea una nota más alta
+            const normalizedY = 1 - (yPos / videoHeight);
+            // Mapea el valor normalizado a un rango de índices de notas
+            const noteIndexFloat = normalizedY * (maxNoteIndex - minNoteIndex + 1);
+            // Redondea al entero más bajo y ajusta al índice mínimo
+            const noteIndex = Math.floor(noteIndexFloat) + minNoteIndex;
+
+            // Asegura que el índice esté dentro de los límites definidos
+            const clampedIndex = Math.max(minNoteIndex, Math.min(maxNoteIndex, noteIndex));
+
+            // Calcula la octava y el nombre de la nota
+            const octave = Math.floor(clampedIndex / notesPerOctave);
+            const noteName = scaleNotes[clampedIndex % notesPerOctave];
+            // Retorna la nota completa, empezando por la octava 4 (C4) como referencia
+            return noteName + (octave + 4);
+        }
+
+        /**
+         * Configura la cámara web, carga el modelo PoseNet y establece los eventos.
+         */
         function setup() {
-            const canvasContainer = document.getElementById('canvas-container');
-            const canvas = createCanvas(canvasContainer.offsetWidth, canvasContainer.offsetHeight);
-            canvas.parent('canvas-container');
+            video = document.getElementById('video');
 
-            // --- Configuración de la Cámara ---
-            video = createCapture(VIDEO);
-            video.size(width, height);
-            video.hide();
+            // Solicita acceso a la cámara del usuario
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(stream) {
+                    video.srcObject = stream;
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        // Ajusta las dimensiones del canvas para que coincidan con las del video
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
 
-            // --- Carga del modelo PoseNet ---
-            poseNet = ml5.poseNet(video, modelReady);
-            poseNet.on('pose', (results) => {
-                poses = results;
-            });
-            
-            // --- Conexión WebSocket al servidor puente ---
-            setupWebSocket();
-        }
-        
-        function setupWebSocket() {
-            // Se conecta al servidor que crearemos con Node.js en la misma máquina
-            ws = new WebSocket('ws://localhost:8080');
-            const statusIndicator = document.getElementById('status-indicator');
-            const statusText = document.getElementById('status');
-            const instructions = document.getElementById('instructions');
+                        // Ajusta el tamaño del contenedor del video para mantener la relación de aspecto
+                        const aspectRatio = video.videoHeight / video.videoWidth;
+                        document.querySelector('.video-container').style.paddingBottom = `${aspectRatio * 100}%`;
 
-            ws.onopen = () => {
-                console.log('Conectado al servidor WebSocket!');
-                statusIndicator.classList.remove('bg-red-500');
-                statusIndicator.classList.add('bg-green-400', 'pulse-g');
-                statusText.innerText = 'Conectado al servidor puente';
-                instructions.classList.remove('hidden');
-            };
-
-            ws.onclose = () => {
-                console.log('Desconectado del servidor WebSocket. Intentando reconectar...');
-                statusIndicator.classList.remove('bg-green-400', 'pulse-g');
-                statusIndicator.classList.add('bg-red-500');
-                statusText.innerText = 'Desconectado. Revisa que el servidor puente esté activo.';
-                instructions.classList.add('hidden');
-                // Intenta reconectar después de 3 segundos
-                setTimeout(setupWebSocket, 3000);
-            };
-            
-            ws.onerror = (err) => {
-                console.error('Error de WebSocket:', err);
-                statusText.innerText = 'Error de conexión. ¿Está el servidor puente en marcha?';
-            }
-        }
-
-        function modelReady() {
-            console.log('¡Modelo PoseNet cargado!');
-        }
-
-        // --- Función de dibujo de p5.js (bucle principal) ---
-        function draw() {
-            // Dibujamos el video espejado en el canvas
-            push();
-            translate(width, 0);
-            scale(-1, 1);
-            image(video, 0, 0, width, height);
-            pop();
-
-            // Dibujamos el esqueleto y los puntos
-            drawKeypoints();
-            drawSkeleton();
-
-            // --- Lógica para enviar datos MIDI ---
-            if (poses.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
-                const pose = poses[0].pose;
-                const rightWrist = pose.keypoints.find(k => k.part === 'rightWrist');
-                const leftWrist = pose.keypoints.find(k => k.part === 'leftWrist');
-                
-                const midiData = {};
-
-                // --- Datos de la mano derecha ---
-                if (rightWrist && rightWrist.score > 0.2) {
-                    midiData.right = {
-                        // Normalizamos los valores entre 0.0 y 1.0
-                        x: rightWrist.position.x / width,
-                        y: rightWrist.position.y / height
+                        // Inicializa PoseNet con el elemento de video
+                        poseNet = ml5.poseNet(video, modelLoaded);
+                        // Escucha los eventos de "pose" para recibir las detecciones
+                        poseNet.on('pose', gotPoses);
                     };
-                }
-                
-                // --- Datos de la mano izquierda ---
-                if (leftWrist && leftWrist.score > 0.2) {
-                    midiData.left = {
-                         // Normalizamos los valores entre 0.0 y 1.0
-                        x: leftWrist.position.x / width,
-                        y: leftWrist.position.y / height
-                    };
+                })
+                .catch(function(err) {
+                    // Manejo de errores si no se puede acceder a la cámara
+                    statusMessage.textContent = 'Error al acceder a la cámara: ' + err.message;
+                    console.error("Error al acceder a la webcam:", err);
+                });
+        }
+
+        /**
+         * Función que se ejecuta cuando el modelo PoseNet ha terminado de cargarse.
+         */
+        function modelLoaded() {
+            statusMessage.textContent = 'Modelo PoseNet cargado. Movimiento en vivo activado.';
+            startButton.style.display = 'none'; // Oculta el botón de inicio una vez que el modelo está listo
+        }
+
+        /**
+         * Callback que se ejecuta cada vez que PoseNet detecta una o varias poses.
+         * @param {Array} results Array de objetos de pose detectados.
+         */
+        function gotPoses(results) {
+            poses = results; // Almacena las poses detectadas
+            draw(); // Dibuja las poses en el canvas
+
+            if (poses.length > 0) {
+                const pose = poses[0].pose; // Toma la primera pose detectada
+                // Busca los keypoints de las muñecas
+                const leftWrist = pose.keypoints.find(kp => kp.part === 'leftWrist');
+                const rightWrist = pose.keypoints.find(kp => kp.part === 'rightWrist');
+
+                // Procesa la muñeca izquierda si está detectada con suficiente confianza y el sintetizador está activo
+                if (leftWrist && leftWrist.score > 0.5 && synth) {
+                    // Mapea la posición Y de la muñeca izquierda a una nota (octava 4, C4-B4)
+                    const newLeftNote = mapYToNote(leftWrist.position.y, 0, notesPerOctave - 1, video.videoHeight);
+                    if (newLeftNote !== leftWristNote) {
+                        synth.triggerAttackRelease(newLeftNote, '8n', Tone.context.currentTime); // Toca la nota
+                        leftWristNote = newLeftNote; // Actualiza la nota actual
+                        leftWristNoteDisplay.textContent = `Muñeca Izquierda: ${leftWristNote}`; // Muestra la nota en la UI
+                    }
                 }
 
-                // Si hemos detectado alguna muñeca, enviamos los datos
-                if (Object.keys(midiData).length > 0) {
-                    ws.send(JSON.stringify(midiData));
-                }
-            }
-        }
-        
-        // --- Las funciones de dibujo no cambian ---
-        function drawKeypoints() {
-            for (let i = 0; i < poses.length; i++) {
-                const pose = poses[i].pose;
-                for (let j = 0; j < pose.keypoints.length; j++) {
-                    const keypoint = pose.keypoints[j];
-                    if (keypoint.score > 0.2) {
-                        if (keypoint.part === 'leftWrist') { fill(236, 72, 153); }
-                        else if (keypoint.part === 'rightWrist') { fill(45, 212, 191); }
-                        else { fill(255, 255, 255, 150); }
-                        noStroke();
-                        const mirroredX = width - keypoint.position.x;
-                        ellipse(mirroredX, keypoint.position.y, 12, 12);
+                // Procesa la muñeca derecha si está detectada con suficiente confianza y el sintetizador está activo
+                if (rightWrist && rightWrist.score > 0.5 && synth) {
+                    // Mapea la posición Y de la muñeca derecha a una nota (octava 5, C5-B5)
+                    const newRightNote = mapYToNote(rightWrist.position.y, notesPerOctave, notesPerOctave * 2 - 1, video.videoHeight);
+                    if (newRightNote !== rightWristNote) {
+                        synth.triggerAttackRelease(newRightNote, '8n', Tone.context.currentTime); // Toca la nota
+                        rightWristNote = newRightNote; // Actualiza la nota actual
+                        rightWristNoteDisplay.textContent = `Muñeca Derecha: ${rightWristNote}`; // Muestra la nota en la UI
                     }
                 }
             }
         }
 
-        function drawSkeleton() {
+        /**
+         * Dibuja los keypoints y el esqueleto de las poses detectadas en el canvas.
+         */
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Borra el contenido anterior del canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height); // Dibuja el fotograma actual del video
+
+            // Itera sobre todas las poses detectadas
             for (let i = 0; i < poses.length; i++) {
-                const skeleton = poses[i].skeleton;
-                for (let j = 0; j < skeleton.length; j++) {
-                    const partA = skeleton[j][0];
-                    const partB = skeleton[j][1];
-                    stroke(255, 255, 255, 100);
-                    strokeWeight(2);
-                    const mirroredAx = width - partA.position.x;
-                    const mirroredBx = width - partB.position.y;
-                    line(mirroredAx, partA.position.y, mirroredBx, partB.position.y);
+                let pose = poses[i].pose;
+                // Dibuja los keypoints (articulaciones)
+                for (let j = 0; j < pose.keypoints.length; j++) {
+                    let keypoint = pose.keypoints[j];
+                    if (keypoint.score > 0.5) { // Solo dibuja si la confianza es alta
+                        ctx.beginPath();
+                        ctx.arc(keypoint.position.x, keypoint.position.y, 5, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#00f'; // Color azul para los keypoints
+                        ctx.fill();
+                    }
+                }
+                // Dibuja el esqueleto (conexiones entre articulaciones)
+                for (let j = 0; j < pose.skeleton.length; j++) {
+                    let skeleton = pose.skeleton[j];
+                    let p1 = skeleton[0];
+                    let p2 = skeleton[1];
+                    if (p1.score > 0.5 && p2.score > 0.5) {
+                        ctx.beginPath();
+                        ctx.moveTo(p1.position.x, p1.position.y);
+                        ctx.lineTo(p2.position.x, p2.position.y);
+                        ctx.strokeStyle = '#00f'; // Color azul para las líneas del esqueleto
+                        ctx.lineWidth = 2; // Grosor de línea
+                        ctx.stroke();
+                    }
                 }
             }
         }
 
-        function windowResized() {
-            const canvasContainer = document.getElementById('canvas-container');
-            resizeCanvas(canvasContainer.offsetWidth, canvasContainer.offsetHeight);
-            video.size(width, height);
-        }
+        // Agrega un listener al botón de inicio para manejar la interacción del usuario
+        startButton.addEventListener('click', async () => {
+            // Asegura que el AudioContext de Tone.js esté en estado "running" (requiere interacción del usuario)
+            if (Tone.context.state !== 'running') {
+                await Tone.start();
+                console.log('AudioContext está funcionando');
+                statusMessage.textContent = 'Audio listo. Detectando movimiento...';
+            }
+            // Inicializa el sintetizador de Tone.js si aún no lo ha hecho
+            if (!synth) {
+                synth = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: {
+                        type: 'sine' // Tipo de onda del oscilador (senoidal)
+                    },
+                    envelope: { // Parámetros del ADSR del envolvente
+                        attack: 0.005,
+                        decay: 0.1,
+                        sustain: 0.3,
+                        release: 1
+                    }
+                }).toDestination(); // Conecta el sintetizador a la salida de audio por defecto
+                console.log('Sintetizador inicializado');
+            }
+            startButton.disabled = true; // Deshabilita el botón después de ser clicado
+        });
+
+        // Inicia la configuración de la cámara y el modelo cuando la ventana se haya cargado completamente
+        window.onload = setup;
     </script>
 </body>
 </html>

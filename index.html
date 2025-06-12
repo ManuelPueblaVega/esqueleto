@@ -29,16 +29,24 @@
     <div class="w-full max-w-4xl text-center mb-6">
         <h1 class="text-4xl md:text-5xl font-bold text-cyan-400">Cuerpo Musical con IA</h1>
         <p id="status" class="mt-2 text-lg text-gray-300">Cargando modelos de IA... Por favor, espera.</p>
-        <p id="instructions" class="mt-2 text-md text-gray-400 hidden">¡Modelo cargado! Mueve tu muñeca derecha para crear música.</p>
+        <p id="instructions" class="mt-2 text-md text-gray-400 hidden">¡Modelo cargado! Mueve tus muñecas para crear música.</p>
         <p id="audio-prompt" class="mt-4 text-yellow-400 font-semibold text-lg animate-pulse">Haz clic en la pantalla para activar el sonido.</p>
     </div>
 
     <!-- El contenedor para el canvas de p5.js -->
     <div id="canvas-container" class="w-full max-w-2xl aspect-video bg-gray-800 rounded-xl shadow-lg"></div>
 
-    <div class="mt-6 text-center text-gray-500 text-sm">
-        <p>Muñeca derecha (vertical) ↕ = Tono</p>
-        <p>Muñeca derecha (horizontal) ↔ = Volumen</p>
+    <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-center text-gray-500 text-sm">
+        <div>
+            <p class="font-bold text-cyan-400">Mano Derecha</p>
+            <p>Vertical ↕ = Tono</p>
+            <p>Horizontal ↔ = Volumen</p>
+        </div>
+        <div>
+            <p class="font-bold text-pink-400">Mano Izquierda</p>
+            <p>Vertical ↕ = Frecuencia del Filtro</p>
+            <p>Horizontal ↔ = Resonancia del Filtro</p>
+        </div>
     </div>
 
     <script>
@@ -46,7 +54,7 @@
         let video;
         let poseNet;
         let poses = [];
-        let osc, envelope; // Oscilador y envolvente para el sonido
+        let osc, envelope, filter; // Oscilador, envolvente y filtro para el sonido
         
         let isAudioEnabled = false; // Controla si el audio ha sido activado por el usuario
 
@@ -58,45 +66,42 @@
             canvas.parent('canvas-container');
 
             // --- Configuración del Sonido ---
-            // Creamos una envolvente para suavizar el inicio y fin del sonido
             envelope = new p5.Envelope();
-            // Duración del ataque (0.01s), decaimiento (0s), sostenido (1), liberación (0.4s)
-            envelope.setADSR(0.01, 0, 1, 0.4);
-            envelope.setRange(1, 0); // Volumen de ataque y de liberación
+            envelope.setADSR(0.01, 0.1, 0.5, 0.4);
+            envelope.setRange(1, 0);
 
-            // Creamos un oscilador de onda sinusoidal
-            osc = new p5.Oscillator('sine');
-            osc.amp(envelope); // El volumen del oscilador es controlado por la envolvente
-            osc.start(); // Inicia el oscilador, pero en silencio
-            osc.freq(440); // Frecuencia inicial (La)
+            osc = new p5.Oscillator('sawtooth'); // Cambiado a 'sawtooth' para que el filtro sea más notorio
+            osc.amp(envelope);
+            
+            filter = new p5.LowPass(); // Creamos el filtro de paso bajo
+            osc.disconnect(); // Desconectamos el oscilador de la salida principal
+            osc.connect(filter); // Conectamos el oscilador al filtro
+            
+            osc.start();
+            osc.freq(440);
 
             // --- Configuración de la Cámara ---
             video = createCapture(VIDEO);
             video.size(width, height);
-            video.hide(); // Ocultamos el elemento de video HTML, lo dibujaremos en el canvas
+            video.hide();
 
             // --- Carga del modelo PoseNet ---
-            // Creamos una instancia de PoseNet, le pasamos el video y la función de callback 'modelReady'
             poseNet = ml5.poseNet(video, modelReady);
-
-            // Escuchamos el evento 'pose'. Cada vez que se detecte una pose, se llama a la función de callback
             poseNet.on('pose', (results) => {
                 poses = results;
             });
         }
 
-        // --- Función de callback para cuando el modelo PoseNet está listo ---
+        // --- Callback para cuando el modelo está listo ---
         function modelReady() {
             console.log('¡Modelo PoseNet cargado!');
             document.getElementById('status').innerText = '¡Modelo listo!';
             document.getElementById('instructions').classList.remove('hidden');
         }
 
-        // --- Función para activar el audio ---
-        // Se llama cuando el usuario hace clic por primera vez
+        // --- Activar el audio con un clic ---
         function mousePressed() {
-            if (!isAudioEnabled) {
-                // El contexto de audio debe ser reanudado por una acción del usuario en los navegadores modernos
+            if (!isAudioEnabled && (mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height)) {
                 getAudioContext().resume().then(() => {
                     console.log('Contexto de audio reanudado.');
                     isAudioEnabled = true;
@@ -105,17 +110,16 @@
             }
         }
 
-        // --- Función de dibujo de p5.js ---
-        // Se ejecuta en bucle continuo, como un 'requestAnimationFrame'
+        // --- Función de dibujo de p5.js (bucle principal) ---
         function draw() {
-            // Dibujamos la imagen de la cámara en el canvas, espejada para que sea más intuitivo
+            // Dibujamos el video espejado en el canvas
             push();
             translate(width, 0);
             scale(-1, 1);
             image(video, 0, 0, width, height);
             pop();
 
-            // Dibujamos los puntos clave y el esqueleto
+            // Dibujamos el esqueleto y los puntos
             drawKeypoints();
             drawSkeleton();
 
@@ -123,35 +127,43 @@
             if (poses.length > 0 && isAudioEnabled) {
                 const pose = poses[0].pose;
                 const rightWrist = pose.keypoints.find(k => k.part === 'rightWrist');
+                const leftWrist = pose.keypoints.find(k => k.part === 'leftWrist'); // Buscamos la muñeca izquierda
 
+                // --- Control de la mano derecha (Tono y Volumen) ---
                 if (rightWrist && rightWrist.score > 0.2) {
-                    // Mapeamos la posición Y de la muñeca (0 a height) a una frecuencia de sonido (100 a 800 Hz)
-                    // La nota será más alta cuanto más arriba esté la muñeca
-                    let freq = map(rightWrist.position.y, 0, height, 800, 100);
-                    osc.freq(freq, 0.1); // El 0.1 suaviza la transición de frecuencia
+                    let freq = map(rightWrist.position.y, 0, height, 600, 100);
+                    let amp = map(rightWrist.position.x, 0, width, 0.05, 0.5);
+                    osc.freq(freq, 0.1);
+                    envelope.setRange(amp, 0);
+                    envelope.play(osc, 0, 0.1);
+                }
 
-                    // Mapeamos la posición X de la muñeca (0 a width) al volumen (0 a 0.5)
-                    // El sonido será más fuerte cuanto más a la derecha (en el video espejado) esté la muñeca
-                    let amp = map(rightWrist.position.x, 0, width, 0, 0.5);
-                    envelope.setRange(amp, 0); // Ajustamos la amplitud de la envolvente
-                    
-                    // Activamos la envolvente para que el sonido se produzca
-                    envelope.play(osc);
-
+                // --- Control de la mano izquierda (Filtro) ---
+                if (leftWrist && leftWrist.score > 0.2) {
+                    // Mapeamos Y a la frecuencia de corte del filtro (más arriba = más brillante)
+                    let filterFreq = map(leftWrist.position.y, 0, height, 5000, 100);
+                    // Mapeamos X a la resonancia del filtro (más a la derecha = más resonante)
+                    let filterRes = map(leftWrist.position.x, 0, width, 15, 5);
+                    filter.freq(filterFreq, 0.1);
+                    filter.res(filterRes, 0.1);
                 }
             }
         }
         
-        // --- Función para dibujar los puntos clave (articulaciones) ---
+        // --- Dibuja los puntos clave (articulaciones) ---
         function drawKeypoints() {
             for (let i = 0; i < poses.length; i++) {
                 const pose = poses[i].pose;
                 for (let j = 0; j < pose.keypoints.length; j++) {
                     const keypoint = pose.keypoints[j];
                     if (keypoint.score > 0.2) {
-                        fill(45, 212, 191); // Color cian-verde
+                        // Coloreamos la muñeca izquierda de rosa para distinguirla
+                        if (keypoint.part === 'leftWrist') {
+                            fill(236, 72, 153); // Color rosa
+                        } else {
+                            fill(45, 212, 191); // Color cian
+                        }
                         noStroke();
-                        // Reflejamos la coordenada X para que coincida con la imagen espejada
                         const mirroredX = width - keypoint.position.x;
                         ellipse(mirroredX, keypoint.position.y, 12, 12);
                     }
@@ -159,16 +171,15 @@
             }
         }
 
-        // --- Función para dibujar el esqueleto ---
+        // --- Dibuja el esqueleto ---
         function drawSkeleton() {
             for (let i = 0; i < poses.length; i++) {
                 const skeleton = poses[i].skeleton;
                 for (let j = 0; j < skeleton.length; j++) {
                     const partA = skeleton[j][0];
                     const partB = skeleton[j][1];
-                    stroke(255, 255, 255, 150); // Blanco semitransparente
+                    stroke(255, 255, 255, 150);
                     strokeWeight(3);
-                    // Reflejamos las coordenadas X para que coincidan con la imagen espejada
                     const mirroredAx = width - partA.position.x;
                     const mirroredBx = width - partB.position.x;
                     line(mirroredAx, partA.position.y, mirroredBx, partB.position.y);
@@ -176,7 +187,7 @@
             }
         }
 
-        // Ajustar el tamaño del canvas si la ventana cambia de tamaño
+        // Ajusta el canvas si la ventana cambia de tamaño
         function windowResized() {
             const canvasContainer = document.getElementById('canvas-container');
             resizeCanvas(canvasContainer.offsetWidth, canvasContainer.offsetHeight);

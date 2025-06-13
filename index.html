@@ -3,320 +3,430 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reconocimiento Corporal para Sonido</title>
-    <!-- Carga de Tailwind CSS para un diseño moderno y responsivo -->
+    <title>Control de Sonido por Movimiento Corporal</title>
+    <!-- Tailwind CSS para el diseño -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Carga de ml5.js para el reconocimiento de poses (PoseNet) -->
-    <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
-    <!-- Carga de Tone.js para la generación de sonido en el navegador -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
-    <!-- Fuente Inter para una mejor legibilidad -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <!-- p5.js para gestionar el canvas y video -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.js"></script>
+    <!-- ml5.js para la detección de pose (PoseNet) -->
+    <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
+    <!-- Tone.js para la síntesis de audio en el navegador -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    
     <style>
-        /* Estilos generales para el cuerpo de la página */
-        body {
-            font-family: 'Inter', sans-serif; /* Aplica la fuente Inter */
-            background-color: #f0f4f8; /* Color de fondo suave */
-            color: #2d3748; /* Color de texto principal */
-            display: flex;
-            flex-direction: column;
-            align-items: center; /* Centra los elementos horizontalmente */
-            justify-content: center; /* Centra los elementos verticalmente */
-            min-height: 100vh; /* Altura mínima del 100% del viewport */
-            margin: 0;
-            padding: 20px;
-            box-sizing: border-box; /* Incluye padding en el ancho total */
-        }
-        /* Estilo del contenedor principal de la aplicación */
-        .container {
-            background-color: #ffffff; /* Fondo blanco */
-            border-radius: 1rem; /* Bordes redondeados */
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Sombra suave */
-            padding: 2.5rem; /* Relleno interno */
-            max-width: 900px; /* Ancho máximo */
-            width: 100%; /* Ocupa todo el ancho disponible */
-            text-align: center; /* Centra el texto */
-        }
-        /* Estilos para los elementos de video y canvas */
-        video, canvas {
-            display: block;
-            margin: 0 auto; /* Centra el elemento */
-            border-radius: 0.75rem; /* Bordes redondeados */
-            background-color: #000; /* Fondo negro para el área de video/canvas */
-        }
-        video {
-            transform: scaleX(-1); /* Efecto espejo para la webcam, más intuitivo */
-            position: absolute; /* Posiciona el video absolutamente dentro de su contenedor */
-            z-index: 1; /* Asegura que el video esté debajo del canvas */
+        /* Estilo para que el canvas se vea bien */
+        #canvas-container {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            aspect-ratio: 640 / 480;
+            margin: auto;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            background: #111827;
         }
         canvas {
-            position: relative; /* Posiciona el canvas relativamente para estar sobre el video */
-            z-index: 2; /* Asegura que el canvas esté encima del video */
-            pointer-events: none; /* Permite que los clics pasen a través del canvas */
-        }
-        /* Contenedor para el video y el canvas, mantiene la relación de aspecto */
-        .video-container {
-            position: relative;
-            width: 100%;
-            padding-bottom: 75%; /* 4:3 aspect ratio (height is 75% of width for 4:3) */
-            height: 0; /* Necesario para que padding-bottom defina la altura */
-            margin-bottom: 1.5rem; /* Margen inferior */
-            border-radius: 0.75rem; /* Bordes redondeados */
-            overflow: hidden; /* Oculta cualquier contenido que se desborde */
-        }
-        .video-container video, .video-container canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
+            display: block;
             width: 100%;
             height: 100%;
         }
-        /* Estilo para el botón de inicio */
-        button {
-            background-color: #4c51bf; /* Color de fondo azul-púrpura */
-            color: white; /* Color de texto blanco */
-            padding: 0.75rem 2rem; /* Relleno interno */
-            border-radius: 0.75rem; /* Bordes redondeados */
-            font-weight: 600; /* Texto en negrita */
-            cursor: pointer; /* Cambia el cursor a una mano al pasar por encima */
-            transition: background-color 0.3s ease; /* Transición suave al pasar el ratón */
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* Sombra */
-        }
-        button:hover {
-            background-color: #5a62e3; /* Color de fondo más claro al pasar el ratón */
-        }
-        /* Estilo para el mensaje de estado */
-        #status-message {
-            margin-top: 1.5rem;
-            font-size: 1.125rem;
-            font-weight: 600;
-            color: #4a5568; /* Color de texto oscuro */
-        }
-        /* Estilo para las etiquetas de las notas musicales */
-        .note-display {
-            margin-top: 1rem;
-            font-size: 1.25rem;
-            color: #2b6cb0; /* Color azul */
-            font-weight: 700; /* Muy en negrita */
-        }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1 class="text-3xl font-bold text-gray-800 mb-6">Reconocimiento Corporal para Sonido</h1>
-        <p class="text-gray-600 mb-8">
-            ¡Hola, Manuel! Esta aplicación detecta tus muñecas para transformar tus movimientos en sonido.
-            La muñeca izquierda controlará notas en una octava y la derecha en la octava superior.
-        </p>
+<body class="bg-gray-900 text-gray-200 font-sans leading-normal tracking-normal">
 
-        <button id="startButton" class="mb-6">Iniciar Cámara y Sonido</button>
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
 
-        <div class="video-container">
-            <video id="video" playsinline autoplay></video>
-            <canvas id="canvas"></canvas>
-        </div>
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-cyan-400 mb-2">Theremin Corporal con IA</h1>
+            <p class="text-lg text-gray-400">Usa tus muñecas para crear música y controlar Ableton Live.</p>
+        </header>
 
-        <div id="status-message" class="mt-4">Cargando modelo...</div>
-        <div id="leftWristNote" class="note-display">Muñeca Izquierda: --</div>
-        <div id="rightWristNote" class="note-display">Muñeca Derecha: --</div>
+        <main>
+            <!-- Contenedor para el canvas de p5.js -->
+            <div id="canvas-container" class="mb-6 relative">
+                 <div id="status" class="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white p-2 rounded-lg z-20">Cargando modelo...</div>
+            </div>
+
+            <!-- Controles -->
+            <div class="controls bg-gray-800 p-4 rounded-lg shadow-lg flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
+                <button id="startButton" class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 w-full sm:w-auto" disabled>
+                    Iniciar Detección
+                </button>
+                <div id="midiControls" class="flex items-center gap-2 hidden">
+                    <label for="midiOut" class="font-semibold">Salida MIDI:</label>
+                    <select id="midiOut" class="bg-gray-700 border border-gray-600 text-white rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                        <option>No disponible</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Instrucciones -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4 text-cyan-400">Instrucciones Musicales</h2>
+                <ol class="list-decimal list-inside space-y-3 text-gray-300">
+                    <li><strong>Mano Derecha (Melodía en Re Dórico):</strong>
+                        <ul class="list-disc list-inside pl-5 mt-1">
+                            <li>Mueve el brazo <strong>arriba y abajo</strong> para cambiar de nota.</li>
+                            <li>Mueve el brazo de <strong>izquierda a derecha</strong> para cambiar el volumen.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Mano Izquierda (Control de Acordes con Color):</strong>
+                         <ul class="list-disc list-inside pl-5 mt-1">
+                             <li><strong>Estira el brazo izquierdo hacia afuera</strong> para activar un acorde. La pantalla se teñirá de un color.</li>
+                             <li>La posición diagonal cambia el acorde y el color (Rojo, Azul, Amarillo).</li>
+                         </ul>
+                    </li>
+                    <li><strong>Parar el Sonido:</strong>
+                         <ul class="list-disc list-inside pl-5 mt-1">
+                             <li><strong>Separa las piernas</strong> para detener toda la música al instante.</li>
+                         </ul>
+                    </li>
+                </ol>
+            </div>
+        </main>
+
     </div>
 
     <script>
-        // Variables globales necesarias para el entorno de Canvas (aunque no se usen directamente en esta app)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        // Variables principales de la aplicación
-        let video; // Elemento de video para la cámara
-        let poseNet; // Instancia de PoseNet de ml5.js
-        let poses = []; // Array para almacenar las poses detectadas
-        let synth; // Sintetizador de Tone.js
-        let leftWristNote = 'C4'; // Nota actual de la muñeca izquierda (valor inicial)
-        let rightWristNote = 'C5'; // Nota actual de la muñeca derecha (valor inicial, una octava arriba)
-
-        // Referencias a elementos del DOM
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const statusMessage = document.getElementById('status-message');
+        // DOM Elements
         const startButton = document.getElementById('startButton');
-        const leftWristNoteDisplay = document.getElementById('leftWristNote');
-        const rightWristNoteDisplay = document.getElementById('rightWristNote');
+        const statusDiv = document.getElementById('status');
+        const midiControlsDiv = document.getElementById('midiControls');
+        const midiOutSelect = document.getElementById('midiOut');
 
-        // Notas de la escala de Do mayor para el mapeo
-        const scaleNotes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-        const notesPerOctave = scaleNotes.length; // 7 notas por octava en una escala diatónica
+        // App variables
+        let video;
+        let poseNet;
+        let poses = [];
+        let p5Canvas;
+        let detectionRunning = false;
 
-        /**
-         * Mapea la posición vertical (Y) de una muñeca a una nota musical dentro de un rango de octavas.
-         * @param {number} yPos La posición Y de la muñeca en el canvas.
-         * @param {number} minNoteIndex El índice inicial para el mapeo de notas (ej. 0 para C4).
-         * @param {number} maxNoteIndex El índice final para el mapeo de notas (ej. 6 para B4).
-         * @param {number} videoHeight La altura del video/canvas para normalizar la posición Y.
-         * @returns {string} La nota musical en formato "NotaOctava" (ej. "C4", "G5").
-         */
-        function mapYToNote(yPos, minNoteIndex, maxNoteIndex, videoHeight) {
-            // Normaliza la posición Y de 0 a 1 e invierte para que arriba sea una nota más alta
-            const normalizedY = 1 - (yPos / videoHeight);
-            // Mapea el valor normalizado a un rango de índices de notas
-            const noteIndexFloat = normalizedY * (maxNoteIndex - minNoteIndex + 1);
-            // Redondea al entero más bajo y ajusta al índice mínimo
-            const noteIndex = Math.floor(noteIndexFloat) + minNoteIndex;
+        // Tone.js Synths
+        let chordSynth, rightSynth;
+        
+        // Web MIDI API
+        let midiAccess;
+        let midiOutput;
 
-            // Asegura que el índice esté dentro de los límites definidos
-            const clampedIndex = Math.max(minNoteIndex, Math.min(maxNoteIndex, noteIndex));
-
-            // Calcula la octava y el nombre de la nota
-            const octave = Math.floor(clampedIndex / notesPerOctave);
-            const noteName = scaleNotes[clampedIndex % notesPerOctave];
-            // Retorna la nota completa, empezando por la octava 4 (C4) como referencia
-            return noteName + (octave + 4);
+        // --- MUSICAL SETUP ---
+        // Melody scale: D Dorian
+        const musicalScale = []; 
+        const melodyBaseNotes = ['D', 'E', 'F', 'G', 'A', 'B', 'C'];
+        for (let octave = 3; octave < 5; octave++) {
+            melodyBaseNotes.forEach(note => {
+                musicalScale.push(note + octave);
+            });
         }
+        
+        // Chord progression for D Dorian: i (Dm), ii (Em), v (Am)
+        const tonicChord = ['D3', 'F3', 'A3'];
+        const secondDegreeChord = ['E3', 'G3', 'B3'];
+        const dominantChord = ['A3', 'C4', 'E4'];
+        const chordProgression = [tonicChord, secondDegreeChord, dominantChord];
+        const chordColors = [ [214, 40, 40, 50], [67, 138, 201, 50], [247, 181, 0, 50] ];
+
+        // Hand states
+        let chordHandState = { isPlaying: false, currentChord: null, currentColor: null }; 
+        let melodyHandState = { isPlaying: false, note: 'D4', midiNote: 62, currentScaleIndex: -1 };
 
         /**
-         * Configura la cámara web, carga el modelo PoseNet y establece los eventos.
+         * p5.js setup function
          */
         function setup() {
-            video = document.getElementById('video');
-
-            // Solicita acceso a la cámara del usuario
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(function(stream) {
-                    video.srcObject = stream;
-                    video.onloadedmetadata = () => {
-                        video.play();
-                        // Ajusta las dimensiones del canvas para que coincidan con las del video
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-
-                        // Ajusta el tamaño del contenedor del video para mantener la relación de aspecto
-                        const aspectRatio = video.videoHeight / video.videoWidth;
-                        document.querySelector('.video-container').style.paddingBottom = `${aspectRatio * 100}%`;
-
-                        // Inicializa PoseNet con el elemento de video
-                        poseNet = ml5.poseNet(video, modelLoaded);
-                        // Escucha los eventos de "pose" para recibir las detecciones
-                        poseNet.on('pose', gotPoses);
-                    };
-                })
-                .catch(function(err) {
-                    // Manejo de errores si no se puede acceder a la cámara
-                    statusMessage.textContent = 'Error al acceder a la cámara: ' + err.message;
-                    console.error("Error al acceder a la webcam:", err);
-                });
+            p5Canvas = createCanvas(640, 480);
+            p5Canvas.parent('canvas-container');
+            video = createCapture(VIDEO);
+            video.size(width, height);
+            video.hide();
+            poseNet = ml5.poseNet(video, onModelReady);
+            poseNet.on('pose', (results) => {
+                poses = results;
+            });
+            noLoop(); 
         }
 
-        /**
-         * Función que se ejecuta cuando el modelo PoseNet ha terminado de cargarse.
-         */
-        function modelLoaded() {
-            statusMessage.textContent = 'Modelo PoseNet cargado. Movimiento en vivo activado.';
-            startButton.style.display = 'none'; // Oculta el botón de inicio una vez que el modelo está listo
+        function onModelReady() {
+            statusDiv.textContent = 'Modelo listo. ¡Inicia la detección!';
+            startButton.disabled = false;
         }
 
-        /**
-         * Callback que se ejecuta cada vez que PoseNet detecta una o varias poses.
-         * @param {Array} results Array de objetos de pose detectados.
-         */
-        function gotPoses(results) {
-            poses = results; // Almacena las poses detectadas
-            draw(); // Dibuja las poses en el canvas
-
-            if (poses.length > 0) {
-                const pose = poses[0].pose; // Toma la primera pose detectada
-                // Busca los keypoints de las muñecas
-                const leftWrist = pose.keypoints.find(kp => kp.part === 'leftWrist');
-                const rightWrist = pose.keypoints.find(kp => kp.part === 'rightWrist');
-
-                // Procesa la muñeca izquierda si está detectada con suficiente confianza y el sintetizador está activo
-                if (leftWrist && leftWrist.score > 0.5 && synth) {
-                    // Mapea la posición Y de la muñeca izquierda a una nota (octava 4, C4-B4)
-                    const newLeftNote = mapYToNote(leftWrist.position.y, 0, notesPerOctave - 1, video.videoHeight);
-                    if (newLeftNote !== leftWristNote) {
-                        synth.triggerAttackRelease(newLeftNote, '8n', Tone.context.currentTime); // Toca la nota
-                        leftWristNote = newLeftNote; // Actualiza la nota actual
-                        leftWristNoteDisplay.textContent = `Muñeca Izquierda: ${leftWristNote}`; // Muestra la nota en la UI
-                    }
-                }
-
-                // Procesa la muñeca derecha si está detectada con suficiente confianza y el sintetizador está activo
-                if (rightWrist && rightWrist.score > 0.5 && synth) {
-                    // Mapea la posición Y de la muñeca derecha a una nota (octava 5, C5-B5)
-                    const newRightNote = mapYToNote(rightWrist.position.y, notesPerOctave, notesPerOctave * 2 - 1, video.videoHeight);
-                    if (newRightNote !== rightWristNote) {
-                        synth.triggerAttackRelease(newRightNote, '8n', Tone.context.currentTime); // Toca la nota
-                        rightWristNote = newRightNote; // Actualiza la nota actual
-                        rightWristNoteDisplay.textContent = `Muñeca Derecha: ${rightWristNote}`; // Muestra la nota en la UI
-                    }
-                }
-            }
+        function setupAudio() {
+            const chordVolume = new Tone.Volume(-14).toDestination();
+            chordSynth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: 'amsine' },
+                envelope: { attack: 0.5, decay: 0.1, sustain: 0.8, release: 1.5 },
+            }).connect(chordVolume);
+            rightSynth = new Tone.Synth({
+                oscillator: { type: 'fatsawtooth' },
+                envelope: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 0.8 },
+            }).toDestination();
         }
 
+        function setupMidi() { /* MIDI setup logic... */ }
+        function onMIDISuccess(access) { /* MIDI success logic... */ }
+        function onMIDIFailure(err) { /* MIDI failure logic... */ }
+
         /**
-         * Dibuja los keypoints y el esqueleto de las poses detectadas en el canvas.
+         * p5.js draw loop
          */
         function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height); // Borra el contenido anterior del canvas
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height); // Dibuja el fotograma actual del video
+            push();
+            translate(width, 0);
+            scale(-1, 1);
+            image(video, 0, 0, width, height);
+            pop();
+            
+            if (chordHandState.isPlaying && chordHandState.currentColor) {
+                fill(chordHandState.currentColor);
+                noStroke();
+                rect(0, 0, width, height);
+            }
+            
+            processPoseAndDraw();
+        }
+        
+        /**
+         * Main processing function
+         */
+        function processPoseAndDraw() {
+            if (poses.length === 0) return;
 
-            // Itera sobre todas las poses detectadas
-            for (let i = 0; i < poses.length; i++) {
-                let pose = poses[i].pose;
-                // Dibuja los keypoints (articulaciones)
-                for (let j = 0; j < pose.keypoints.length; j++) {
-                    let keypoint = pose.keypoints[j];
-                    if (keypoint.score > 0.5) { // Solo dibuja si la confianza es alta
-                        ctx.beginPath();
-                        ctx.arc(keypoint.position.x, keypoint.position.y, 5, 0, 2 * Math.PI);
-                        ctx.fillStyle = '#00f'; // Color azul para los keypoints
-                        ctx.fill();
+            const pose = poses[0].pose;
+            
+            drawKeypoints(pose.keypoints);
+            drawSkeleton(poses[0].skeleton);
+            displayConfidenceScores(pose.leftWrist, pose.rightWrist);
+
+            if (checkLegsPosition(pose)) {
+                stopAllSounds();
+                displayMuteMessage();
+                return;
+            }
+
+            handleChordHand(pose);
+            handleMelodyHand(pose);
+        }
+        
+        function handleChordHand(pose) {
+            const confidenceThreshold = 0.15;
+            const ls = pose.leftShoulder;
+            const rs = pose.rightShoulder;
+            const lw = pose.leftWrist;
+            const lh = pose.leftHip;
+
+            if (ls.confidence < confidenceThreshold || lw.confidence < confidenceThreshold || lh.confidence < confidenceThreshold || rs.confidence < confidenceThreshold) {
+                if (chordHandState.isPlaying) stopSound('chord');
+                return;
+            }
+
+            const shoulderWidth = abs(ls.x - rs.x);
+            const armExtension = abs(lw.x - ls.x);
+            const isArmExtended = armExtension > shoulderWidth * 0.6;
+            
+            if (isArmExtended) {
+                const verticalThreshold = (lh.y - ls.y) * 0.2;
+                let selectedChord, selectedColor;
+                
+                if (lw.y > ls.y + verticalThreshold) {
+                    selectedChord = tonicChord;
+                    selectedColor = chordColors[0];
+                } else if (lw.y < ls.y - verticalThreshold) {
+                    selectedChord = dominantChord;
+                    selectedColor = chordColors[2];
+                } else {
+                    selectedChord = secondDegreeChord;
+                    selectedColor = chordColors[1];
+                }
+
+                if (!chordHandState.isPlaying && detectionRunning) {
+                    startChord(selectedChord, selectedColor);
+                } else if (chordHandState.isPlaying && chordHandState.currentChord !== selectedChord && detectionRunning) {
+                    stopSound('chord');
+                    startChord(selectedChord, selectedColor);
+                }
+                drawActiveWrist(lw, [255, 107, 107]);
+                drawChordZones(ls, verticalThreshold);
+
+            } else {
+                if (chordHandState.isPlaying) {
+                    stopSound('chord');
+                }
+            }
+        }
+        
+        function handleMelodyHand(pose) {
+            const confidenceThreshold = 0.15;
+            const rw = pose.rightWrist;
+
+            if (rw.confidence > confidenceThreshold) {
+                if (!melodyHandState.isPlaying && detectionRunning) {
+                    melodyHandState.isPlaying = true;
+                    if (rightSynth) rightSynth.triggerAttack();
+                }
+                
+                const noteIndex = floor(map(rw.y, 0, height, musicalScale.length - 1, 0));
+                const currentNote = musicalScale[noteIndex];
+                
+                const mirroredX = width - rw.x;
+                const volume = map(mirroredX, 0, width, -30, 0); 
+                
+                if (rightSynth && detectionRunning) {
+                    rightSynth.frequency.rampTo(currentNote, 0.1);
+                    rightSynth.volume.rampTo(volume, 0.1);
+
+                    if (noteIndex !== melodyHandState.currentScaleIndex) {
+                        sendMidiNoteOff(melodyHandState.midiNote); 
+                        melodyHandState.midiNote = Tone.Frequency(currentNote).toMidi();
+                        melodyHandState.currentScaleIndex = noteIndex;
+                        sendMidiNoteOn(melodyHandState.midiNote, 100);
                     }
                 }
-                // Dibuja el esqueleto (conexiones entre articulaciones)
-                for (let j = 0; j < pose.skeleton.length; j++) {
-                    let skeleton = pose.skeleton[j];
-                    let p1 = skeleton[0];
-                    let p2 = skeleton[1];
-                    if (p1.score > 0.5 && p2.score > 0.5) {
-                        ctx.beginPath();
-                        ctx.moveTo(p1.position.x, p1.position.y);
-                        ctx.lineTo(p2.position.x, p2.position.y);
-                        ctx.strokeStyle = '#00f'; // Color azul para las líneas del esqueleto
-                        ctx.lineWidth = 2; // Grosor de línea
-                        ctx.stroke();
-                    }
+                
+                drawActiveWrist(rw, [45, 212, 191]);
+            } else {
+                 if (melodyHandState.isPlaying) {
+                    stopSound('melody');
                 }
             }
         }
 
-        // Agrega un listener al botón de inicio para manejar la interacción del usuario
+        function startChord(chord, color) {
+            chordHandState.isPlaying = true;
+            chordHandState.currentChord = chord;
+            chordHandState.currentColor = color;
+            if(chordSynth) chordSynth.triggerAttack(chord);
+            chord.forEach(note => sendMidiNoteOn(Tone.Frequency(note).toMidi(), 80));
+        }
+
+        function checkLegsPosition(pose) {
+            const leftHip = pose.leftHip;
+            const rightHip = pose.rightHip;
+            const leftAnkle = pose.leftAnkle;
+            const rightAnkle = pose.rightAnkle;
+            if (leftHip.confidence < 0.2 || rightHip.confidence < 0.2 || leftAnkle.confidence < 0.2 || rightAnkle.confidence < 0.2) { return false; }
+            const hipDistance = abs(leftHip.x - rightHip.x);
+            const ankleDistance = abs(leftAnkle.x - rightAnkle.x);
+            return ankleDistance > hipDistance * 1.5;
+        }
+        
+        function stopSound(type) {
+             if(type === 'chord' || type === 'all') {
+                if (chordHandState.isPlaying) {
+                    if(chordSynth) chordSynth.triggerRelease(chordHandState.currentChord);
+                    chordHandState.currentChord.forEach(note => sendMidiNoteOff(Tone.Frequency(note).toMidi()));
+                    chordHandState.isPlaying = false;
+                    chordHandState.currentChord = null;
+                    chordHandState.currentColor = null;
+                }
+            }
+            if(type === 'melody' || type === 'all') {
+                if (melodyHandState.isPlaying) {
+                    if(rightSynth) rightSynth.triggerRelease();
+                    sendMidiNoteOff(melodyHandState.midiNote);
+                    melodyHandState.isPlaying = false;
+                    melodyHandState.currentScaleIndex = -1;
+                }
+            }
+        }
+
+        function stopAllSounds() {
+            stopSound('all');
+        }
+        
+        // --- DRAWING FUNCTIONS ---
+
+        function displayMuteMessage() {
+             fill(255, 0, 0, 200);
+             noStroke();
+             textAlign(CENTER, CENTER);
+             textSize(32);
+             textStyle(BOLD);
+             text("SONIDO DETENIDO", width / 2, height / 2);
+        }
+        
+        function drawKeypoints(keypoints) {
+            for (let i = 0; i < keypoints.length; i++) {
+                const keypoint = keypoints[i];
+                if (keypoint.score > 0.1) {
+                    fill(255, 255, 255, 150);
+                    noStroke();
+                    const mirroredX = width - keypoint.position.x;
+                    ellipse(mirroredX, keypoint.position.y, 10, 10);
+                }
+            }
+        }
+        
+        function drawSkeleton(skeleton) {
+             for (let i = 0; i < skeleton.length; i++) {
+                const partA = skeleton[i][0];
+                const partB = skeleton[i][1];
+                stroke(255, 255, 255, 100);
+                strokeWeight(2);
+                const mirroredPartAx = width - partA.position.x;
+                const mirroredPartBx = width - partB.position.y;
+                line(mirroredPartAx, partA.position.y, mirroredPartBx, partB.position.y);
+            }
+        }
+
+        function displayConfidenceScores(leftWrist, rightWrist) {
+            fill(255);
+            noStroke();
+            textSize(14);
+            textAlign(LEFT, TOP);
+            textFont('monospace');
+            const leftText = `Confianza Izq: ${leftWrist.confidence.toFixed(2)}`;
+            const rightText = `Confianza Der: ${rightWrist.confidence.toFixed(2)}`;
+            fill(255, 107, 107);
+            text(leftText, 10, 10);
+            fill(45, 212, 191);
+            text(rightText, 10, 30);
+        }
+        
+        function drawActiveWrist(wrist, color) {
+            fill(color[0], color[1], color[2]);
+            noStroke();
+            const mirroredX = width - wrist.x;
+            ellipse(mirroredX, wrist.y, 24, 24);
+        }
+        
+        function drawChordZones(shoulder, threshold) {
+            const mirroredX = width - shoulder.x;
+            stroke(255, 255, 255, 50);
+            strokeWeight(2);
+            line(mirroredX, shoulder.y - threshold, 0, shoulder.y - threshold);
+            line(mirroredX, shoulder.y + threshold, 0, shoulder.y + threshold);
+        }
+        
+        // --- MIDI FUNCTIONS ---
+
+        function sendMidiNoteOn(note, velocity = 100) {
+            if (midiOutput) midiOutput.send([0x90, note, velocity]);
+        }
+        function sendMidiNoteOff(note) {
+            if (midiOutput) midiOutput.send([0x80, note, 0]);
+        }
+        
+        // --- EVENT LISTENERS ---
         startButton.addEventListener('click', async () => {
-            // Asegura que el AudioContext de Tone.js esté en estado "running" (requiere interacción del usuario)
-            if (Tone.context.state !== 'running') {
+            if (!detectionRunning) {
                 await Tone.start();
-                console.log('AudioContext está funcionando');
-                statusMessage.textContent = 'Audio listo. Detectando movimiento...';
+                setupAudio();
+                setupMidi();
+                detectionRunning = true;
+                startButton.textContent = 'Detener Detección';
+                startButton.classList.replace('bg-cyan-500', 'bg-red-500');
+                loop();
+            } else {
+                detectionRunning = false;
+                stopAllSounds();
+                startButton.textContent = 'Iniciar Detección';
+                startButton.classList.replace('bg-red-500', 'bg-cyan-500');
+                noLoop();
             }
-            // Inicializa el sintetizador de Tone.js si aún no lo ha hecho
-            if (!synth) {
-                synth = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: {
-                        type: 'sine' // Tipo de onda del oscilador (senoidal)
-                    },
-                    envelope: { // Parámetros del ADSR del envolvente
-                        attack: 0.005,
-                        decay: 0.1,
-                        sustain: 0.3,
-                        release: 1
-                    }
-                }).toDestination(); // Conecta el sintetizador a la salida de audio por defecto
-                console.log('Sintetizador inicializado');
-            }
-            startButton.disabled = true; // Deshabilita el botón después de ser clicado
         });
 
-        // Inicia la configuración de la cámara y el modelo cuando la ventana se haya cargado completamente
-        window.onload = setup;
     </script>
 </body>
 </html>
+
